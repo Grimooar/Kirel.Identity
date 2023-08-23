@@ -1,6 +1,8 @@
 using Kirel.Identity.Middlewares;
+using Kirel.Identity.Server.API.Controllers;
 using Kirel.Identity.Server.API.Extensions;
 using Kirel.Identity.Server.Core.Extensions;
+using Kirel.Identity.Server.Core.Filters;
 using Kirel.Identity.Server.Domain;
 using Kirel.Identity.Server.Infrastructure.Contexts;
 using Kirel.Identity.Server.Infrastructure.Shared.Extensions;
@@ -13,6 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 var jwtConfig = builder.Configuration.GetSection("jwt").Get<JwtAuthenticationConfig>();
 var dbConfig = builder.Configuration.GetSection("dbConfig").Get<DbConfig>();
 var maintenanceConfig = builder.Configuration.GetSection("maintenance").Get<MaintenanceConfig>();
+
+
 
 // Add Identity framework db context based on Kirel Identity templates
 // with ability to change db driver (mssql, mysql, postgresql)
@@ -38,14 +42,18 @@ builder.Services.AddValidators();
 // Add Identity services and jwt token issuing service, that works with DTOs and with fluent validation framework
 builder.Services.AddServices(jwtConfig);
 
-builder.Services.AddControllers();
+bool enableRegistrationController = builder.Configuration.GetValue<bool>("RegistrationEnable");
+string[] disabledControllers = builder.Configuration.GetSection("DisabledControllers").Get<string[]>();
 
-
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add(new EnabledControllerAttribute(enableRegistrationController, disabledControllers));
+}).AddApplicationPart(typeof(RegistrationController).Assembly);
 // Add ASP.NET authentication configuration
 builder.Services.AddAuthenticationConfiguration(jwtConfig);
 
 // Add custom swagger configuration
-builder.Services.AddSwagger();
+builder.Services.AddSwagger(enableRegistrationController,disabledControllers);
 
 builder.Services.AddCors(options =>
 {
