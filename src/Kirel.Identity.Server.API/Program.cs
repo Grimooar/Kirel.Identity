@@ -1,3 +1,5 @@
+using Kirel.Identity.Core.Models;
+using Kirel.Identity.Core.Options;
 using Kirel.Identity.Middlewares;
 using Kirel.Identity.Server.API.Controllers;
 using Kirel.Identity.Server.API.Extensions;
@@ -18,6 +20,7 @@ var dbConfig = builder.Configuration.GetSection("dbConfig").Get<DbConfig>();
 var maintenanceConfig = builder.Configuration.GetSection("maintenance").Get<MaintenanceConfig>();
 var registrationDisabled = builder.Configuration.GetValue<bool>("RegistrationDisabled");
 var apiKeys = builder.Configuration.GetSection("APIKeys").Get<ApiKeysList>();
+var emailsettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>();
 
 //To disable controller add him here like disabledControllers.Add(typeof(RegistrationController));
 var disabledControllers = new DisabledControllerTypes();
@@ -27,7 +30,9 @@ if (registrationDisabled) disabledControllers.Add(typeof(RegistrationController)
 // with ability to change db driver (mssql, mysql, postgresql)
 builder.Services.AddDbContextByConfig<IdentityServerDbContext, MssqlIdentityServerDbContext,
     PostgresqlIdentityServerDbContext, MysqlIdentityServerDbContext, SqliteIdentityServerDbContext>(dbConfig);
-builder.Services.AddIdentity<User, Role>().AddEntityFrameworkStores<IdentityServerDbContext>();
+builder.Services.AddIdentity<User, Role>()
+    .AddEntityFrameworkStores<IdentityServerDbContext>()
+    .AddDefaultTokenProviders();
 builder.Services.Configure<IdentityOptions>(options =>
 {
     // Password settings.
@@ -45,16 +50,19 @@ builder.Services.AddMappers();
 // Add identity DTOs fluent validators
 builder.Services.AddValidators();
 // Add Identity services and jwt token issuing service, that works with DTOs and with fluent validation framework
-builder.Services.AddServices(jwtConfig);
+builder.Services.AddServices(jwtConfig, emailsettings);
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add(new EnabledControllerActionFilter(disabledControllers));
 });
-
+/*
+builder.Services.AddScoped(typeof(KirelUserToken<Guid>));
+*/
+var userTokenInstance = new KirelUserToken<Guid>();
+builder.Services.AddSingleton(userTokenInstance);
 
 // Add ASP.NET authentication configuration
 builder.Services.AddAuthenticationConfiguration(jwtConfig, apiKeys);
-
 // Add custom swagger configuration
 builder.Services.AddSwagger(disabledControllers);
 
@@ -75,14 +83,12 @@ var app = builder.Build();
 //Apply migrations to db, create admin user and role, do maintenance admin password reset if needed
 await IdentityServerDbInitializer.Initialize<IdentityServerDbContext>(
     app.Services.GetRequiredService<IServiceScopeFactory>().CreateScope().ServiceProvider, maintenanceConfig);
-
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
 app.UseCors("DevCorsPolicy");
 //app.UseHttpsRedirection();
 
